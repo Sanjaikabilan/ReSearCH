@@ -7,7 +7,7 @@ general:
   privacypolicy_url: false
   # use true to use your own donation page written in searx/info/en/donate.md
   # use false to disable the donation link
-  donation_url: https://docs.searxng.org/donate.html
+  donation_url: false
   # mailto:contact@example.com
   contact_url: false
   # record stats
@@ -26,12 +26,12 @@ search:
   # Existing autocomplete backends: "dbpedia", "duckduckgo", "google", "yandex",
   # "seznam", "startpage", "swisscows", "qwant", "wikipedia" - leave blank to turn it off
   # by default.
-  autocomplete: ""
+  autocomplete: "duckduckgo"
   # minimun characters to type before autocompleter starts
-  autocomplete_min: 4
+  autocomplete_min: 1
   # Default search language - leave blank to detect from browser information or
   # use codes from 'languages.py'
-  default_lang: ""
+  default_lang: "en-US"
   # Available languages
   # languages:
   #   - all
@@ -53,7 +53,7 @@ search:
 server:
   # If you change port, bind_address or base_url don't forget to rebuild
   # instance's environment (make buildenv)
-  port: 8888
+  port: 8000
   bind_address: "127.0.0.1"
   base_url: false  # Possible values: false or "https://example.org/location".
   limiter: false  # rate limit the number of request on the instance, block some bots
@@ -104,7 +104,7 @@ ui:
   # results_on_new_tab: false
   theme_args:
     # style of simple theme: auto, light, dark
-    simple_style: auto
+    simple_style: dark
 
 # Lock arbitrary settings on the preferences page.  To find the ID of the user
 # setting you want to lock, check the ID of the form on the page "preferences".
