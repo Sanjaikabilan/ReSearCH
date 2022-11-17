@@ -2,7 +2,7 @@ general:
   # Debug mode, only for development
   debug: false
   # displayed name
-  instance_name: "SearXNG"
+  instance_name: "ReSearCH"
   # For example: https://example.com/privacy
   privacypolicy_url: false
   # use true to use your own donation page written in searx/info/en/donate.md
@@ -63,7 +63,7 @@ server:
 
   secret_key: "ultrasecretkey"  # change this!
   # Proxying image results through searx
-  image_proxy: false
+  image_proxy: true
   # 1.0 and 1.1 are supported
   http_protocol_version: "1.0"
   # POST queries are more secure as they don't show up in history but may cause
