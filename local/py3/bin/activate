@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="/mnt/d/Web-Dev/researx/researx/local/py3"
+VIRTUAL_ENV="/home/ggi/searxng/local/py3"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"

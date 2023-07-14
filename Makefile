@@ -76,11 +76,11 @@ test.shell:
 
 MANAGE += buildenv
 MANAGE += weblate.translations.commit weblate.push.translations
-MANAGE += data.all data.languages data.useragents data.osm_keys_tags
+MANAGE += data.all data.traits data.useragents
 MANAGE += docs.html docs.live docs.gh-pages docs.prebuild docs.clean
 MANAGE += docker.build docker.push docker.buildx
 MANAGE += gecko.driver
-MANAGE += node.env node.clean
+MANAGE += node.env node.env.dev node.clean
 MANAGE += py.build py.clean
 MANAGE += pyenv pyenv.install pyenv.uninstall
 MANAGE += pypi.upload pypi.upload.test

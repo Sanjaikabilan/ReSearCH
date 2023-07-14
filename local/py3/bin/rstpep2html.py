@@ -1,4 +1,4 @@
-#!/mnt/d/Web-Dev/researx/researx/local/py3/bin/python
+#!/home/ggi/searxng/local/py3/bin/python
 
 # $Id: rstpep2html.py 4564 2006-05-21 20:44:42Z wiemann $
 # Author: David Goodger <goodger@python.org>

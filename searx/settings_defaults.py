@@ -12,13 +12,13 @@ import logging
 from base64 import b64decode
 from os.path import dirname, abspath
 
-from searx.languages import language_codes as languages
+from .sxng_locales import sxng_locales
 
 searx_dir = abspath(dirname(__file__))
 
 logger = logging.getLogger('searx')
 OUTPUT_FORMATS = ['html', 'csv', 'json', 'rss']
-LANGUAGE_CODES = ['all'] + list(l[0] for l in languages)
+SXNG_LOCALE_TAGS = ['all', 'auto'] + list(l[0] for l in sxng_locales)
 SIMPLE_STYLE = ('auto', 'light', 'dark')
 CATEGORIES_AS_TABS = {
     'general': {},
@@ -156,10 +156,18 @@ SCHEMA = {
         'safe_search': SettingsValue((0, 1, 2), 0),
         'autocomplete': SettingsValue(str, ''),
         'autocomplete_min': SettingsValue(int, 4),
-        'default_lang': SettingsValue(tuple(LANGUAGE_CODES + ['']), ''),
-        'languages': SettingSublistValue(LANGUAGE_CODES, LANGUAGE_CODES),
+        'default_lang': SettingsValue(tuple(SXNG_LOCALE_TAGS + ['']), ''),
+        'languages': SettingSublistValue(SXNG_LOCALE_TAGS, SXNG_LOCALE_TAGS),
         'ban_time_on_fail': SettingsValue(numbers.Real, 5),
         'max_ban_time_on_fail': SettingsValue(numbers.Real, 120),
+        'suspended_times': {
+            'SearxEngineAccessDenied': SettingsValue(numbers.Real, 86400),
+            'SearxEngineCaptcha': SettingsValue(numbers.Real, 86400),
+            'SearxEngineTooManyRequests': SettingsValue(numbers.Real, 3600),
+            'cf_SearxEngineCaptcha': SettingsValue(numbers.Real, 1296000),
+            'cf_SearxEngineAccessDenied': SettingsValue(numbers.Real, 86400),
+            'recaptcha_SearxEngineCaptcha': SettingsValue(numbers.Real, 604800),
+        },
         'formats': SettingsValue(list, OUTPUT_FORMATS),
     },
     'server': {
@@ -174,7 +182,7 @@ SCHEMA = {
         'default_http_headers': SettingsValue(dict, {}),
     },
     'redis': {
-        'url': SettingsValue(str, 'unix:///usr/local/searxng-redis/run/redis.sock?db=0'),
+        'url': SettingsValue((None, False, str), False, 'SEARXNG_REDIS_URL'),
     },
     'ui': {
         'static_path': SettingsDirectoryValue(str, os.path.join(searx_dir, 'static')),
@@ -201,9 +209,7 @@ SCHEMA = {
         'enable_http2': SettingsValue(bool, True),
         'verify': SettingsValue((bool, str), True),
         'max_request_timeout': SettingsValue((None, numbers.Real), None),
-        # Magic number kept from previous code
         'pool_connections': SettingsValue(int, 100),
-        # Picked from constructor
         'pool_maxsize': SettingsValue(int, 10),
         'keepalive_expiry': SettingsValue(numbers.Real, 5.0),
         # default maximum redirect
@@ -225,7 +231,8 @@ SCHEMA = {
     'plugins': SettingsValue(list, []),
     'enabled_plugins': SettingsValue((None, list), None),
     'checker': {
-        'off_when_debug': SettingsValue(bool, True),
+        'off_when_debug': SettingsValue(bool, True, None),
+        'scheduling': SettingsValue((None, dict), None, None),
     },
     'categories_as_tabs': SettingsValue(dict, CATEGORIES_AS_TABS),
     'engines': SettingsValue(list, []),

@@ -30,7 +30,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV "/mnt/d/Web-Dev/researx/researx/local/py3"
+set -gx VIRTUAL_ENV "/home/ggi/searxng/local/py3"
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/bin" $PATH

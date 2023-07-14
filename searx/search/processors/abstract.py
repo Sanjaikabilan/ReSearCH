@@ -74,7 +74,7 @@ class EngineProcessor(ABC):
         try:
             self.engine.init(get_engine_from_settings(self.engine_name))
         except SearxEngineResponseException as exc:
-            self.logger.warn('Fail to initialize // %s', exc)
+            self.logger.warning('Fail to initialize // %s', exc)
         except Exception:  # pylint: disable=broad-except
             self.logger.exception('Fail to initialize')
         else:
@@ -138,7 +138,8 @@ class EngineProcessor(ABC):
         return False
 
     def get_params(self, search_query, engine_category):
-        """Returns a set of *request params* or ``None`` if request is not supported.
+        """Returns a set of (see :ref:`request params <engine request arguments>`) or
+        ``None`` if request is not supported.
 
         Not supported conditions (``None`` is returned):
 
@@ -159,11 +160,20 @@ class EngineProcessor(ABC):
         params['safesearch'] = search_query.safesearch
         params['time_range'] = search_query.time_range
         params['engine_data'] = search_query.engine_data.get(self.engine_name, {})
+        params['searxng_locale'] = search_query.lang
+
+        # deprecated / vintage --> use params['searxng_locale']
+        #
+        # Conditions related to engine's traits are implemented in engine.traits
+        # module. Don't do 'locale' decissions here in the abstract layer of the
+        # search processor, just pass the value from user's choice unchanged to
+        # the engine request.
 
         if hasattr(self.engine, 'language') and self.engine.language:
             params['language'] = self.engine.language
         else:
             params['language'] = search_query.lang
+
         return params
 
     @abstractmethod

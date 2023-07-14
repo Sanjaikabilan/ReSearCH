@@ -3,10 +3,12 @@
 # pylint: disable=missing-module-docstring, too-few-public-methods
 
 import threading
+from copy import copy
 from timeit import default_timer
 from uuid import uuid4
 
 import flask
+import babel
 
 from searx import settings
 from searx.answerers import ask
@@ -43,6 +45,7 @@ class Search:
     __slots__ = "search_query", "result_container", "start_time", "actual_timeout"
 
     def __init__(self, search_query: SearchQuery):
+        """Initialize the Search"""
         # init vars
         super().__init__()
         self.search_query = search_query

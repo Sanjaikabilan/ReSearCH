@@ -1,3 +1,0 @@
-<svg width="92mm" height="92mm" viewBox="0 0 92 92"><g transform="translate(-40.921 -17.417)">
-    <img href="{{ url_for('static', filename='img/searxng.png') }}" />
-</g></svg>

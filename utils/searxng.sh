@@ -295,7 +295,7 @@ In your instance, redis DB connector is configured at:
 
     ${redis_url}
 "
-    if searxng.instance.exec python -c "from searx.shared import redisdb; redisdb.init() or exit(42)"; then
+    if searxng.instance.exec python -c "from searx import redisdb; redisdb.initialize() or exit(42)"; then
         info_msg "SearXNG instance is able to connect redis DB."
         return
     fi
@@ -317,8 +317,8 @@ In your instance, redis DB connector is configured at:
             # fedora35 there is v2.0.20 installed --> no way to get additional
             # groups on fedora's tyrant mode.
             #
-            # ERROR:searx.shared.redis: [searxng (993)] can't connect redis DB ...
-            # ERROR:searx.shared.redis:   Error 13 connecting to unix socket: /usr/local/searxng-redis/run/redis.sock. Permission denied.
+            # ERROR:searx.redisdb: [searxng (993)] can't connect redis DB ...
+            # ERROR:searx.redisdb:   Error 13 connecting to unix socket: /usr/local/searxng-redis/run/redis.sock. Permission denied.
             # ERROR:searx.plugins.limiter: init limiter DB failed!!!
             #
             # $ ps -aef | grep '/usr/sbin/uwsgi --ini searxng.ini'
@@ -395,7 +395,7 @@ searxng.remove.all() {
     wait_key
 
     if service_is_available "${SEARXNG_URL}"; then
-        MSG="** Don't forgett to remove your public site! (${SEARXNG_URL}) **" wait_key 10
+        MSG="** Don't forget to remove your public site! (${SEARXNG_URL}) **" wait_key 10
     fi
 }
 
@@ -465,6 +465,18 @@ git config user.name "${ADMIN_NAME}"
 git config --list
 EOF
     popd > /dev/null
+}
+
+searxng.install.link_src() {
+    rst_title "link SearXNG's sources to: $2" chapter
+    echo
+    tee_stderr 0.1 <<EOF | sudo -H -u "${SERVICE_USER}" -i 2>&1 | prefix_stdout "$_service_prefix"
+mv -f "${SEARXNG_SRC}" "${SEARXNG_SRC}.backup"
+ln -s "${2}" "${SEARXNG_SRC}"
+ls -ld /usr/local/searxng/searxng-src
+EOF
+    echo
+    uWSGI_restart "$SEARXNG_UWSGI_APP"
 }
 
 searxng.install.pyenv() {
@@ -650,7 +662,7 @@ searxng.remove.redis() {
 }
 
 searxng.instance.localtest() {
-    rst_title "Test SearXNG instance localy" section
+    rst_title "Test SearXNG instance locally" section
     rst_para "Activate debug mode, start a minimal SearXNG "\
              "service and debug a HTTP request/response cycle."
 
@@ -684,7 +696,7 @@ To install uWSGI use::
         die 42 "SearXNG's uWSGI app not available"
     fi
 
-    if ! searxng.instance.exec python -c "from searx.shared import redisdb; redisdb.init() or exit(42)"; then
+    if ! searxng.instance.exec python -c "from searx.shared import redisdb; redisdb.initialize() or exit(42)"; then
         rst_para "\
 The configured redis DB is not available: If your server is public to the
 internet, you should setup a bot protection to block excessively bot queries.
@@ -783,7 +795,7 @@ This removes Nginx site ${NGINX_SEARXNG_SITE}::
 
 searxng.instance.exec() {
     if ! service_account_is_available "${SERVICE_USER}"; then
-        die 42 "can't execute: instance does not exists (missed account ${SERVICE_USER})"
+        die 42 "can't execute: instance does not exist (missed account ${SERVICE_USER})"
     fi
     sudo -H -i -u "${SERVICE_USER}" \
          SEARXNG_UWSGI_USE_SOCKET="${SEARXNG_UWSGI_USE_SOCKET}" \

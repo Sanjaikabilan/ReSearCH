@@ -1,4 +1,4 @@
-#!/mnt/d/Web-Dev/researx/researx/local/py3/bin/python
+#!/home/ggi/searxng/local/py3/bin/python
 # -*- coding: utf8 -*-
 # :Copyright: © 2015 Günter Milde.
 # :License: Released under the terms of the `2-Clause BSD license`_, in short:

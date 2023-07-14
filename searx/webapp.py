@@ -5,6 +5,8 @@
 """WebbApp
 
 """
+# pylint: disable=use-dict-literal
+
 import hashlib
 import hmac
 import json
@@ -56,45 +58,46 @@ from searx import (
 
 from searx import infopage
 from searx.data import ENGINE_DESCRIPTIONS
-from searx.results import Timing, UnresponsiveEngine
+from searx.results import Timing
 from searx.settings_defaults import OUTPUT_FORMATS
 from searx.settings_loader import get_default_settings_path
 from searx.exceptions import SearxParameterException
 from searx.engines import (
-    OTHER_CATEGORY,
+    DEFAULT_CATEGORY,
     categories,
     engines,
     engine_shortcuts,
 )
+
+from searx import webutils
 from searx.webutils import (
-    UnicodeWriter,
     highlight_content,
     get_static_files,
     get_result_templates,
     get_themes,
-    prettify_url,
+    exception_classname_to_text,
     new_hmac,
     is_hmac_of,
     is_flask_run_cmdline,
     group_engines_in_tab,
-    searxng_l10n_timespan,
 )
 from searx.webadapter import (
     get_search_query_from_webapp,
     get_selected_categories,
+    parse_lang,
 )
 from searx.utils import (
-    html_to_text,
     gen_useragent,
     dict_subset,
-    match_language,
 )
 from searx.version import VERSION_STRING, GIT_URL, GIT_BRANCH
 from searx.query import RawTextQuery
 from searx.plugins import Plugin, plugins, initialize as plugin_initialize
+from searx.botdetection import link_token
 from searx.plugins.oa_doi_rewrite import get_doi_resolver
 from searx.preferences import (
     Preferences,
+    ClientPref,
     ValidationException,
 )
 from searx.answerers import (
@@ -115,11 +118,13 @@ from searx.locales import (
     RTL_LOCALES,
     localeselector,
     locales_initialize,
+    match_locale,
 )
 
 # renaming names from searx imports ...
 from searx.autocomplete import search_autocomplete, backends as autocomplete_backends
-from searx.languages import language_codes as languages
+from searx.redisdb import initialize as redis_initialize
+from searx.sxng_locales import sxng_locales
 from searx.search import SearchWithPlugins, initialize as search_initialize
 from searx.network import stream as http_stream, set_context_network_name
 from searx.search.checker import get_result as checker_get_result
@@ -159,41 +164,6 @@ app.jinja_env.add_extension('jinja2.ext.loopcontrols')  # pylint: disable=no-mem
 app.jinja_env.filters['group_engines_in_tab'] = group_engines_in_tab  # pylint: disable=no-member
 app.secret_key = settings['server']['secret_key']
 
-babel = Babel(app)
-
-timeout_text = gettext('timeout')
-parsing_error_text = gettext('parsing error')
-http_protocol_error_text = gettext('HTTP protocol error')
-network_error_text = gettext('network error')
-ssl_cert_error_text = gettext("SSL error: certificate validation has failed")
-exception_classname_to_text = {
-    None: gettext('unexpected crash'),
-    'timeout': timeout_text,
-    'asyncio.TimeoutError': timeout_text,
-    'httpx.TimeoutException': timeout_text,
-    'httpx.ConnectTimeout': timeout_text,
-    'httpx.ReadTimeout': timeout_text,
-    'httpx.WriteTimeout': timeout_text,
-    'httpx.HTTPStatusError': gettext('HTTP error'),
-    'httpx.ConnectError': gettext("HTTP connection error"),
-    'httpx.RemoteProtocolError': http_protocol_error_text,
-    'httpx.LocalProtocolError': http_protocol_error_text,
-    'httpx.ProtocolError': http_protocol_error_text,
-    'httpx.ReadError': network_error_text,
-    'httpx.WriteError': network_error_text,
-    'httpx.ProxyError': gettext("proxy error"),
-    'searx.exceptions.SearxEngineCaptchaException': gettext("CAPTCHA"),
-    'searx.exceptions.SearxEngineTooManyRequestsException': gettext("too many requests"),
-    'searx.exceptions.SearxEngineAccessDeniedException': gettext("access denied"),
-    'searx.exceptions.SearxEngineAPIException': gettext("server API error"),
-    'searx.exceptions.SearxEngineXPathException': parsing_error_text,
-    'KeyError': parsing_error_text,
-    'json.decoder.JSONDecodeError': parsing_error_text,
-    'lxml.etree.ParserError': parsing_error_text,
-    'ssl.SSLCertVerificationError': ssl_cert_error_text,  # for Python > 3.7
-    'ssl.CertificateError': ssl_cert_error_text,  # for Python 3.7
-}
-
 
 class ExtendedRequest(flask.Request):
     """This class is never initialized and only used for type checking."""
@@ -210,24 +180,19 @@ class ExtendedRequest(flask.Request):
 request = typing.cast(ExtendedRequest, flask.request)
 
 
-@babel.localeselector
 def get_locale():
     locale = localeselector()
     logger.debug("%s uses locale `%s`", urllib.parse.quote(request.url), locale)
     return locale
 
 
+babel = Babel(app, locale_selector=get_locale)
+
+
 def _get_browser_language(req, lang_list):
-    for lang in req.headers.get("Accept-Language", "en").split(","):
-        if ';' in lang:
-            lang = lang.split(';')[0]
-        if '-' in lang:
-            lang_parts = lang.split('-')
-            lang = "{}-{}".format(lang_parts[0], lang_parts[-1].upper())
-        locale = match_language(lang, lang_list, fallback=None)
-        if locale is not None:
-            return locale
-    return 'en'
+    client = ClientPref.from_http_request(req)
+    locale = match_locale(client.locale_tag, lang_list, fallback='en')
+    return locale
 
 
 def _get_locale_rfc5646(locale):
@@ -370,16 +335,15 @@ def get_translations():
     }
 
 
-def _get_enable_categories(all_categories: Iterable[str]):
-    disabled_engines = request.preferences.engines.get_disabled()
-    enabled_categories = set(
-        # pylint: disable=consider-using-dict-items
-        category
-        for engine_name in engines
-        for category in engines[engine_name].categories
-        if (engine_name, category) not in disabled_engines
-    )
-    return [x for x in all_categories if x in enabled_categories]
+def get_enabled_categories(category_names: Iterable[str]):
+    """The categories in ``category_names```for which there is no active engine
+    are filtered out and a reduced list is returned."""
+
+    enabled_engines = [item[0] for item in request.preferences.engines.get_enabled()]
+    enabled_categories = set()
+    for engine_name in enabled_engines:
+        enabled_categories.update(engines[engine_name].categories)
+    return [x for x in category_names if x in enabled_categories]
 
 
 def get_pretty_url(parsed_url: urllib.parse.ParseResult):
@@ -404,7 +368,7 @@ def get_client_settings():
 
 
 def render(template_name: str, **kwargs):
-
+    # pylint: disable=too-many-statements
     kwargs['client_settings'] = str(
         base64.b64encode(
             bytes(
@@ -419,6 +383,7 @@ def render(template_name: str, **kwargs):
     kwargs['endpoint'] = 'results' if 'q' in kwargs else request.endpoint
     kwargs['cookies'] = request.cookies
     kwargs['errors'] = request.errors
+    kwargs['link_token'] = link_token.get_token()
 
     # values from the preferences
     kwargs['preferences'] = request.preferences
@@ -431,21 +396,20 @@ def render(template_name: str, **kwargs):
     kwargs['theme'] = request.preferences.get_value('theme')
     kwargs['method'] = request.preferences.get_value('method')
     kwargs['categories_as_tabs'] = list(settings['categories_as_tabs'].keys())
-    kwargs['categories'] = _get_enable_categories(categories.keys())
-    kwargs['OTHER_CATEGORY'] = OTHER_CATEGORY
+    kwargs['categories'] = get_enabled_categories(settings['categories_as_tabs'].keys())
+    kwargs['DEFAULT_CATEGORY'] = DEFAULT_CATEGORY
 
     # i18n
-    kwargs['language_codes'] = [l for l in languages if l[0] in settings['search']['languages']]
+    kwargs['sxng_locales'] = [l for l in sxng_locales if l[0] in settings['search']['languages']]
 
     locale = request.preferences.get_value('locale')
     kwargs['locale_rfc5646'] = _get_locale_rfc5646(locale)
 
     if locale in RTL_LOCALES and 'rtl' not in kwargs:
         kwargs['rtl'] = True
+
     if 'current_language' not in kwargs:
-        kwargs['current_language'] = match_language(
-            request.preferences.get_value('language'), settings['search']['languages']
-        )
+        kwargs['current_language'] = parse_lang(request.preferences, {}, RawTextQuery('', []))
 
     # values from settings
     kwargs['search_formats'] = [x for x in settings['search']['formats'] if x != 'html']
@@ -507,7 +471,10 @@ def pre_request():
     request.timings = []  # pylint: disable=assigning-non-slot
     request.errors = []  # pylint: disable=assigning-non-slot
 
-    preferences = Preferences(themes, list(categories.keys()), engines, plugins)  # pylint: disable=redefined-outer-name
+    client_pref = ClientPref.from_http_request(request)
+    # pylint: disable=redefined-outer-name
+    preferences = Preferences(themes, list(categories.keys()), engines, plugins, client_pref)
+
     user_agent = request.headers.get('User-Agent', '').lower()
     if 'webkit' in user_agent and 'android' in user_agent:
         preferences.key_value_settings['method'].value = 'GET'
@@ -643,6 +610,12 @@ def health():
     return Response('OK', mimetype='text/plain')
 
 
+@app.route('/client<token>.css', methods=['GET', 'POST'])
+def client_token(token=None):
+    link_token.ping(request, token)
+    return Response('', mimetype='text/css')
+
+
 @app.route('/search', methods=['GET', 'POST'])
 def search():
     """Search query in q and return results.
@@ -676,10 +649,10 @@ def search():
     raw_text_query = None
     result_container = None
     try:
-        search_query, raw_text_query, _, _ = get_search_query_from_webapp(request.preferences, request.form)
-        # search = Search(search_query) #  without plugins
+        search_query, raw_text_query, _, _, selected_locale = get_search_query_from_webapp(
+            request.preferences, request.form
+        )
         search = SearchWithPlugins(search_query, request.user_plugins, request)  # pylint: disable=redefined-outer-name
-
         result_container = search.search()
 
     except SearxParameterException as e:
@@ -689,45 +662,54 @@ def search():
         logger.exception(e, exc_info=True)
         return index_error(output_format, gettext('search error')), 500
 
-    # results
-    results = result_container.get_ordered_results()
-    number_of_results = result_container.results_number()
-    if number_of_results < result_container.results_length():
-        number_of_results = 0
-
-    # checkin for a external bang
+    # 1. check if the result is a redirect for an external bang
     if result_container.redirect_url:
         return redirect(result_container.redirect_url)
 
-    # Server-Timing header
+    # 2. add Server-Timing header for measuring performance characteristics of
+    # web applications
     request.timings = result_container.get_timings()  # pylint: disable=assigning-non-slot
+
+    # 3. formats without a template
+
+    if output_format == 'json':
+
+        response = webutils.get_json_response(search_query, result_container)
+        return Response(response, mimetype='application/json')
+
+    if output_format == 'csv':
+
+        csv = webutils.CSVWriter(StringIO())
+        webutils.write_csv_response(csv, result_container)
+        csv.stream.seek(0)
+
+        response = Response(csv.stream.read(), mimetype='application/csv')
+        cont_disp = 'attachment;Filename=searx_-_{0}.csv'.format(search_query.query)
+        response.headers.add('Content-Disposition', cont_disp)
+        return response
+
+    # 4. formats rendered by a template / RSS & HTML
 
     current_template = None
     previous_result = None
 
-    # output
+    results = result_container.get_ordered_results()
     for result in results:
         if output_format == 'html':
             if 'content' in result and result['content']:
                 result['content'] = highlight_content(escape(result['content'][:1024]), search_query.query)
             if 'title' in result and result['title']:
                 result['title'] = highlight_content(escape(result['title'] or ''), search_query.query)
-        else:
-            if result.get('content'):
-                result['content'] = html_to_text(result['content']).strip()
-            # removing html content and whitespace duplications
-            result['title'] = ' '.join(html_to_text(result['title']).strip().split())
 
         if 'url' in result:
-            result['pretty_url'] = prettify_url(result['url'])
-
+            result['pretty_url'] = webutils.prettify_url(result['url'])
         if result.get('publishedDate'):  # do not try to get a date from an empty string or a None type
             try:  # test if publishedDate >= 1900 (datetime module bug)
                 result['pubdate'] = result['publishedDate'].strftime('%Y-%m-%d %H:%M:%S%z')
             except ValueError:
                 result['publishedDate'] = None
             else:
-                result['publishedDate'] = searxng_l10n_timespan(result['publishedDate'])
+                result['publishedDate'] = webutils.searxng_l10n_timespan(result['publishedDate'])
 
         # set result['open_group'] = True when the template changes from the previous result
         # set result['close_group'] = True when the template changes on the next result
@@ -741,42 +723,7 @@ def search():
     if previous_result:
         previous_result['close_group'] = True
 
-    if output_format == 'json':
-        x = {
-            'query': search_query.query,
-            'number_of_results': number_of_results,
-            'results': results,
-            'answers': list(result_container.answers),
-            'corrections': list(result_container.corrections),
-            'infoboxes': result_container.infoboxes,
-            'suggestions': list(result_container.suggestions),
-            'unresponsive_engines': __get_translated_errors(result_container.unresponsive_engines),
-        }
-        response = json.dumps(x, default=lambda item: list(item) if isinstance(item, set) else item)
-        return Response(response, mimetype='application/json')
-
-    if output_format == 'csv':
-        csv = UnicodeWriter(StringIO())
-        keys = ('title', 'url', 'content', 'host', 'engine', 'score', 'type')
-        csv.writerow(keys)
-        for row in results:
-            row['host'] = row['parsed_url'].netloc
-            row['type'] = 'result'
-            csv.writerow([row.get(key, '') for key in keys])
-        for a in result_container.answers:
-            row = {'title': a, 'type': 'answer'}
-            csv.writerow([row.get(key, '') for key in keys])
-        for a in result_container.suggestions:
-            row = {'title': a, 'type': 'suggestion'}
-            csv.writerow([row.get(key, '') for key in keys])
-        for a in result_container.corrections:
-            row = {'title': a, 'type': 'correction'}
-            csv.writerow([row.get(key, '') for key in keys])
-        csv.stream.seek(0)
-        response = Response(csv.stream.read(), mimetype='application/csv')
-        cont_disp = 'attachment;Filename=searx_-_{0}.csv'.format(search_query.query)
-        response.headers.add('Content-Disposition', cont_disp)
-        return response
+    # 4.a RSS
 
     if output_format == 'rss':
         response_rss = render(
@@ -786,11 +733,11 @@ def search():
             corrections=result_container.corrections,
             suggestions=result_container.suggestions,
             q=request.form['q'],
-            number_of_results=number_of_results,
+            number_of_results=result_container.number_of_results,
         )
         return Response(response_rss, mimetype='text/xml')
 
-    # HTML output format
+    # 4.b HTML
 
     # suggestions: use RawTextQuery to get the suggestion URLs with the same bang
     suggestion_urls = list(
@@ -807,6 +754,9 @@ def search():
         )
     )
 
+    # search_query.lang contains the user choice (all, auto, en, ...)
+    # when the user choice is "auto", search.search_query.lang contains the detected language
+    # otherwise it is equals to search_query.lang
     return render(
         # fmt: off
         'results.html',
@@ -814,45 +764,27 @@ def search():
         q=request.form['q'],
         selected_categories = search_query.categories,
         pageno = search_query.pageno,
-        time_range = search_query.time_range,
-        number_of_results = format_decimal(number_of_results),
+        time_range = search_query.time_range or '',
+        number_of_results = format_decimal(result_container.number_of_results),
         suggestions = suggestion_urls,
         answers = result_container.answers,
         corrections = correction_urls,
         infoboxes = result_container.infoboxes,
         engine_data = result_container.engine_data,
         paging = result_container.paging,
-        unresponsive_engines = __get_translated_errors(
+        unresponsive_engines = webutils.get_translated_errors(
             result_container.unresponsive_engines
         ),
         current_locale = request.preferences.get_value("locale"),
-        current_language = match_language(
-            search_query.lang,
+        current_language = selected_locale,
+        search_language = match_locale(
+            search.search_query.lang,
             settings['search']['languages'],
             fallback=request.preferences.get_value("language")
         ),
         timeout_limit = request.form.get('timeout_limit', None)
         # fmt: on
     )
-
-
-def __get_translated_errors(unresponsive_engines: Iterable[UnresponsiveEngine]):
-    translated_errors = []
-
-    # make a copy unresponsive_engines to avoid "RuntimeError: Set changed size
-    # during iteration" it happens when an engine modifies the ResultContainer
-    # after the search_multiple_requests method has stopped waiting
-
-    for unresponsive_engine in unresponsive_engines:
-        error_user_text = exception_classname_to_text.get(unresponsive_engine.error_type)
-        if not error_user_text:
-            error_user_text = exception_classname_to_text[None]
-        error_msg = gettext(error_user_text)
-        if unresponsive_engine.suspended:
-            error_msg = gettext('Suspended') + ': ' + error_msg
-        translated_errors.append((unresponsive_engine.engine, error_msg))
-
-    return sorted(translated_errors, key=lambda e: e[0])
 
 
 @app.route('/about', methods=['GET'])
@@ -896,16 +828,11 @@ def autocompleter():
     # and there is a query part
     if len(raw_text_query.autocomplete_list) == 0 and len(sug_prefix) > 0:
 
-        # get language from cookie
-        language = request.preferences.get_value('language')
-        if not language or language == 'all':
-            language = 'en'
-        else:
-            language = language.split('-')[0]
+        # get SearXNG's locale and autocomplete backend from cookie
+        sxng_locale = request.preferences.get_value('language')
+        backend_name = request.preferences.get_value('autocomplete')
 
-        # run autocompletion
-        raw_results = search_autocomplete(request.preferences.get_value('autocomplete'), sug_prefix, language)
-        for result in raw_results:
+        for result in search_autocomplete(backend_name, sug_prefix, sxng_locale):
             # attention: this loop will change raw_text_query object and this is
             # the reason why the sug_prefix was stored before (see above)
             if result != sug_prefix:
@@ -990,7 +917,9 @@ def preferences():
             'rate80': rate80,
             'rate95': rate95,
             'warn_timeout': e.timeout > settings['outgoing']['request_timeout'],
-            'supports_selected_language': _is_selected_language_supported(e, request.preferences),
+            'supports_selected_language': e.traits.is_locale_supported(
+                str(request.preferences.get_value('language') or 'all')
+            ),
             'result_count': result_count,
         }
     # end of stats
@@ -1041,7 +970,9 @@ def preferences():
     # supports
     supports = {}
     for _, e in filtered_engines.items():
-        supports_selected_language = _is_selected_language_supported(e, request.preferences)
+        supports_selected_language = e.traits.is_locale_supported(
+            str(request.preferences.get_value('language') or 'all')
+        )
         safesearch = e.safesearch
         time_range_support = e.time_range_support
         for checker_test_name in checker_results.get(e.name, {}).get('errors', {}):
@@ -1086,16 +1017,6 @@ def preferences():
         preferences = True
         # fmt: on
     )
-
-
-def _is_selected_language_supported(engine, preferences: Preferences):  # pylint: disable=redefined-outer-name
-    language = preferences.get_value('language')
-    if language == 'all':
-        return True
-    x = match_language(
-        language, getattr(engine, 'supported_languages', []), getattr(engine, 'language_aliases', {}), None
-    )
-    return bool(x)
 
 
 @app.route('/image_proxy', methods=['GET'])
@@ -1316,10 +1237,7 @@ def config():
         if not request.preferences.validate_token(engine):
             continue
 
-        supported_languages = engine.supported_languages
-        if isinstance(engine.supported_languages, dict):
-            supported_languages = list(engine.supported_languages.keys())
-
+        _languages = engine.traits.languages.keys()
         _engines.append(
             {
                 'name': name,
@@ -1328,7 +1246,8 @@ def config():
                 'enabled': not engine.disabled,
                 'paging': engine.paging,
                 'language_support': engine.language_support,
-                'supported_languages': supported_languages,
+                'languages': list(_languages),
+                'regions': list(engine.traits.regions.keys()),
                 'safesearch': engine.safesearch,
                 'time_range_support': engine.time_range_support,
                 'timeout': engine.timeout,
@@ -1384,6 +1303,7 @@ werkzeug_reloader = flask_run_development or (searx_debug and __name__ == "__mai
 if not werkzeug_reloader or (werkzeug_reloader and os.environ.get("WERKZEUG_RUN_MAIN") == "true"):
     locales_initialize()
     _INFO_PAGES = infopage.InfoPageSet()
+    redis_initialize()
     plugin_initialize(app)
     search_initialize(enable_checker=True, check_network=True, enable_metrics=settings['general']['enable_metrics'])
 

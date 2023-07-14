@@ -1,4 +1,4 @@
-#!/mnt/d/Web-Dev/researx/researx/local/py3/bin/python
+#!/home/ggi/searxng/local/py3/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

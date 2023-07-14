@@ -22,7 +22,7 @@ Calling the ``help`` target gives a first overview (``make help``):
 
 .. program-output:: bash -c "cd ..; make --no-print-directory help"
 
-.. contents:: Contents
+.. contents::
    :depth: 2
    :local:
    :backlinks: entry
@@ -90,15 +90,23 @@ Rebuild instance's environment with the modified settings from the
 :ref:`settings brand` and :ref:`settings server` section of your
 :ref:`settings.yml <settings location>`.
 
-We have all SearXNG setups are centralized in the :ref:`settings.yml` file.
-This setup is available as long we are in a *installed instance*.  E.g. the
-*installed instance* on the server or the *installed developer instance* at
-``./local`` (the later one is created by a :ref:`make install <make
-install>` or :ref:`make run <make run>`).
+  What is the :origin:`utils/brand.env` needed for and why do you need to rebuild
+  it if necessary?
 
-Tasks running outside of an *installed instance*, especially those tasks and
-scripts running at (pre-) installation time do not have access to the SearXNG
-setup (from a *installed instance*).  Those tasks need a *build environment*.
+  Short answer: :ref:`installation and maintenance <searxng maintenance>`
+  scripts are running outside of instance's runtime environment and need some
+  values defined in the runtime environment.
+
+All the SearXNG setups are centralized in the :ref:`settings.yml` file.  This
+setup is available as long we are in a *installed instance*.  E.g. the
+*installed instance* on the server or the *installed developer instance* at
+``./local`` (the later one is created by a :ref:`make install <make install>` or
+:ref:`make run <make run>`).
+
+Tasks running outside of an *installed instance*, especially :ref:`installation
+and maintenance <searxng maintenance>` tasks running at (pre-) installation time
+do not have access to the SearXNG setup (from a *installed instance*).  Those
+tasks need a *build environment*.
 
 The ``make buildenv`` target will update the *build environment* in:
 
@@ -111,6 +119,28 @@ from the YAML configuration:
   ``PUBLIC_URL``)
 - ``SEARXNG_BIND_ADDRESS`` from :ref:`server.bind_address <settings server>`
 - ``SEARXNG_PORT`` from :ref:`server.port <settings server>`
+
+The ``GIT_URL`` and ``GIT_BRANCH`` in the origin:`utils/brand.env` file, are
+readed from the git VCS and the branch that is checked out when ``make
+buildenv`` command runs.
+
+.. _brand:
+
+**I would like to create my own brand, how should I proceed?**
+
+Create a remote branch (``example.org``), checkout the remote branch (on your
+local developer desktop) and in the :origin:`searx/settings.yml` file in the
+:ref:`settings server` section set ``base_url``.  Run ``make buildenv`` and
+create a commit for your brand.
+
+On your server you clone the branch (``example.org``) into your HOME folder
+``~`` from where you run the :ref:`installation <installation>` and
+:ref:`maintenance <searxng maintenance>` task.
+
+To upgrade you brand, rebase on SearXNG's master branch (on your local
+developer desktop), force push it to your remote branch.  Go to your server, do
+a force pull and run :ref:`sudo -H ./utils/searxng.sh instance update <update
+searxng>`.
 
 .. _make node.env:
 
@@ -213,14 +243,14 @@ calling ``make clean`` stop all processes using the :ref:`make install` or
 We describe the usage of the ``doc.*`` targets in the :ref:`How to contribute /
 Documentation <contrib docs>` section.  If you want to edit the documentation
 read our :ref:`make docs.live` section.  If you are working in your own brand,
-adjust your :ref:`settings global`.
+adjust your :ref:`settings brand`.
 
 .. _make docs.gh-pages:
 
 ``make docs.gh-pages``
 ======================
 
-To deploy on github.io first adjust your :ref:`settings global`.  For any
+To deploy on github.io first adjust your :ref:`settings brand`.  For any
 further read :ref:`deploy on github.io`.
 
 .. _make test:

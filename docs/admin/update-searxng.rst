@@ -1,3 +1,5 @@
+.. _searxng maintenance:
+
 ===================
 SearXNG maintenance
 ===================
@@ -7,7 +9,7 @@ SearXNG maintenance
    - :ref:`toolboxing`
    - :ref:`uWSGI maintenance`
 
-.. contents:: Contents
+.. contents::
    :depth: 2
    :local:
    :backlinks: entry
@@ -132,5 +134,5 @@ to see if there are some left overs.  In this example there exists a *old*
    INFO:  [OK] (old) account 'filtron' does not exists
    INFO:  [OK] (old) account 'morty' does not exists
    ...
-   INFO    searx.shared                  : Use shared_simple implementation
-   INFO    searx.shared.redis            : connected redis DB --> default
+   INFO    searx.redisdb                 : connecting to Redis db=0 path='/usr/local/searxng-redis/run/redis.sock'
+   INFO    searx.redisdb                 : connected to Redis
